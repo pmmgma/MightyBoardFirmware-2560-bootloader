@@ -535,6 +535,7 @@ uint32_t count = 0;
 void (*app_start)(void) = 0x0000;
 
 
+
 int __attribute__ ((noinline)) bootloader_program_page(address_t address, unsigned char *p, unsigned int	size) {
     unsigned int	data;
     unsigned char	highByte, lowByte;
@@ -564,6 +565,15 @@ int __attribute__ ((noinline)) bootloader_program_page(address_t address, unsign
     
     return 0;    
 }
+
+void __attribute__((naked,section(".bootloader_trampoline"))) bootloader_trampoline(void);
+
+void bootloader_trampoline(void) {
+     __asm__ __volatile__ ("%~jmp " __STRINGIFY(bootloader_program_page) ::); 
+}
+
+
+
 
 
 //*****************************************************************************

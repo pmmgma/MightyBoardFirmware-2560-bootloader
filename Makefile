@@ -200,6 +200,7 @@ LDFLAGS += $(PRINTF_LIB) $(SCANF_LIB) $(MATH_LIB)
 #LDFLAGS += -Wl,--section-start=.text=$(BOOTLOADER_ADDRESS) -nostartfiles -nodefaultlibs
 #LDFLAGS += -Wl,--section-start=.text=$(BOOTLOADER_ADDRESS) -nostartfiles
 LDFLAGS += -Wl,--section-start=.text=$(BOOTLOADER_ADDRESS)
+LDFLAGS += -Wl,--section-start=.bootloader_trampoline=$(BOOTLOADER_TRAMPOLINE)
 
 #---------------- Programming Options (avrdude) ----------------
 
@@ -239,7 +240,9 @@ AVRDUDE_FLAGS = -p $(MCU) -P $(AVRDUDE_PORT) -c $(AVRDUDE_PROGRAMMER)
 AVRDUDE_FLAGS += $(AVRDUDE_NO_VERIFY)
 AVRDUDE_FLAGS += $(AVRDUDE_VERBOSE)
 AVRDUDE_FLAGS += $(AVRDUDE_ERASE_COUNTER)
-AVRDUDE_FLAGS += $(AVRDUDE_BAUDRATE)
+ifdef AVRDUDE_BAUDRATE
+AVRDUDE_FLAGS += -b $(AVRDUDE_BAUDRATE)
+endif
 
 
 
@@ -341,6 +344,7 @@ ALL_ASFLAGS = -mmcu=$(MCU) -I. -x assembler-with-cpp $(ASFLAGS)
 mega1280: MCU = atmega1280
 mega1280: F_CPU = 16000000
 mega1280: BOOTLOADER_ADDRESS = 1E000
+mega1280: BOOTLOADER_TRAMPOLINE = 1FFF0
 mega1280: CFLAGS += -D_MEGA_BOARD_
 mega1280: begin gccversion sizebefore build sizeafter end 
 			mv $(TARGET).hex stk500boot_v2_mega1280.hex
@@ -351,6 +355,7 @@ mega1280: begin gccversion sizebefore build sizeafter end
 mega2560:	MCU = atmega2560
 mega2560:	F_CPU = 16000000
 mega2560:	BOOTLOADER_ADDRESS = 3E000
+mega2560:	BOOTLOADER_TRAMPOLINE = 3FFF0
 mega2560:	CFLAGS += -D_MEGA_BOARD_
 mega2560:	begin gccversion sizebefore build sizeafter end 
 			mv $(TARGET).hex stk500boot_v2_mega2560.hex
@@ -360,6 +365,7 @@ mega2560:	begin gccversion sizebefore build sizeafter end
 mighty2560:	MCU = atmega2560
 mighty2560:	F_CPU = 16000000
 mighty2560:	BOOTLOADER_ADDRESS = 3E000
+mighty2560:	BOOTLOADER_TRAMPOLINE = 3FFF0
 mighty2560:	CFLAGS += -D_MEGA_BOARD_ 
 mighty2560:	CFLAGS += -fno-inline-small-functions
 mighty2560:	CFLAGS += -DBAUDRATE=57600 -DUART_BAUDRATE_DOUBLE_SPEED=0
@@ -378,6 +384,7 @@ amber128: MCU = atmega128
 #amber128: F_CPU = 16000000
 amber128: F_CPU = 14745600
 amber128: BOOTLOADER_ADDRESS = 1E000
+amber128: BOOTLOADER_TRAMPOLINE = 1FFF0
 amber128: CFLAGS += -D_BOARD_AMBER128_
 amber128: begin gccversion sizebefore build sizeafter end 
 			mv $(TARGET).hex stk500boot_v2_amber128.hex
@@ -387,6 +394,7 @@ amber128: begin gccversion sizebefore build sizeafter end
 m2561: MCU = atmega2561
 m2561: F_CPU = 8000000
 m2561: BOOTLOADER_ADDRESS = 3E000
+m2561: BOOTLOADER_TRAMPOLINE = 3FFF0
 m2561: CFLAGS += -D_ANDROID_2561_ -DBAUDRATE=57600
 m2561: begin gccversion sizebefore build sizeafter end 
 			mv $(TARGET).hex stk500boot_v2_android2561.hex
@@ -403,6 +411,7 @@ m2561: begin gccversion sizebefore build sizeafter end
 cerebot:	MCU = atmega2560
 cerebot:	F_CPU = 8000000
 cerebot:	BOOTLOADER_ADDRESS = 3E000
+cerebot:	BOOTLOADER_TRAMPOLINE = 3FFF0
 cerebot:	CFLAGS += -D_CEREBOTPLUS_BOARD_ -DBAUDRATE=38400 -DUART_BAUDRATE_DOUBLE_SPEED=1
 cerebot:	begin gccversion sizebefore build sizeafter end 
 			mv $(TARGET).hex stk500boot_v2_cerebotplus.hex
@@ -413,6 +422,7 @@ cerebot:	begin gccversion sizebefore build sizeafter end
 penguino: MCU = atmega32
 penguino: F_CPU = 16000000
 penguino: BOOTLOADER_ADDRESS = 7800
+penguino: BOOTLOADER_TRAMPOLINE = 7FF0
 penguino: CFLAGS += -D_PENGUINO_ -DBAUDRATE=57600
 penguino: begin gccversion sizebefore build sizeafter end 
 			mv $(TARGET).hex stk500boot_v2_penguino.hex
