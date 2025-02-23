@@ -259,7 +259,7 @@ LICENSE:
 #define CONFIG_PARAM_BUILD_NUMBER_HIGH	0
 #define CONFIG_PARAM_HW_VER				0x0F
 #define CONFIG_PARAM_SW_MAJOR			2
-#define CONFIG_PARAM_SW_MINOR			0x0A
+#define CONFIG_PARAM_SW_MINOR			0x0B
 
 /*
  * Calculate the address where the bootloader starts from FLASHEND and BOOTSIZE
@@ -272,7 +272,14 @@ LICENSE:
 	#define BOOTSIZE 2048
 #endif
 
-#define APP_END  (FLASHEND -(2*BOOTSIZE) + 1)
+#define APP_END  (FLASHEND - BOOTSIZE + 1)
+
+#if (FLASHEND > 0x10000)
+#define FADDR(x) pgm_get_far_address(x)
+#else
+#define FADDR(x) (uint16_t)(x)
+#endif
+
 
 /*
  * Signature bytes are not available in avr-gcc io_xxx.h
@@ -528,11 +535,41 @@ uint32_t count = 0;
 void (*app_start)(void) = 0x0000;
 
 
+int __attribute__ ((noinline)) bootloader_program_page(address_t address, unsigned char *p, unsigned int	size) {
+    unsigned int	data;
+    unsigned char	highByte, lowByte;
+    address_t		tempaddress	=	address;
+    // erase only main section (bootloader protection)
+    if (tempaddress < APP_END )
+    {
+        boot_page_erase(tempaddress);	// Perform page erase
+        boot_spm_busy_wait();		// Wait until the memory is erased.
+
+        /* Write FLASH */
+        do {
+            lowByte		=	*p++;
+            highByte 	=	*p++;
+
+            data		=	(highByte << 8) | lowByte;
+            boot_page_fill(address,data);
+
+            address	=	address + 2;	// Select next word in memory
+            size	-=	2;				// Reduce number of bytes to write by two
+        } while (size);					// Loop until all bytes written
+
+        boot_page_write(tempaddress);
+        boot_spm_busy_wait();
+        boot_rww_enable();				// Re-enable the RWW section
+    }
+    
+    return 0;    
+}
+
+
 //*****************************************************************************
 int main(void)
 {
 	address_t		address			=	0;
-	address_t		eraseAddress	=	0;
 	unsigned char	msgParseState;
 	unsigned int	ii				=	0;
 	unsigned char	checksum		=	0;
@@ -966,14 +1003,14 @@ int main(void)
 					break;
 	#endif
 				case CMD_CHIP_ERASE_ISP:
-					eraseAddress	=	0;
 					msgLength		=	2;
+                    address = 0;
 				//	msgBuffer[1]	=	STATUS_CMD_OK;
 					msgBuffer[1]	=	STATUS_CMD_FAILED;	//*	isue 543, return FAILED instead of OK
 					break;
 
 				case CMD_LOAD_ADDRESS:
-	#if defined(RAMPZ)
+	#if (FLASHEND > 0x10000)
 					address	=	( ((address_t)(msgBuffer[1])<<24)|((address_t)(msgBuffer[2])<<16)|((address_t)(msgBuffer[3])<<8)|(msgBuffer[4]) )<<1;
 	#else
 					address	=	( ((msgBuffer[3])<<8)|(msgBuffer[4]) )<<1;		//convert word to byte address
@@ -987,36 +1024,12 @@ int main(void)
 					{
 						unsigned int	size	=	((msgBuffer[1])<<8) | msgBuffer[2];
 						unsigned char	*p	=	msgBuffer+10;
-						unsigned int	data;
-						unsigned char	highByte, lowByte;
-						address_t		tempaddress	=	address;
-
+                        unsigned int	result;
 
 						if ( msgBuffer[0] == CMD_PROGRAM_FLASH_ISP )
 						{
-							// erase only main section (bootloader protection)
-							if (eraseAddress < APP_END )
-							{
-								boot_page_erase(eraseAddress);	// Perform page erase
-								boot_spm_busy_wait();		// Wait until the memory is erased.
-								eraseAddress += SPM_PAGESIZE;	// point to next page to be erase
-							}
-
-							/* Write FLASH */
-							do {
-								lowByte		=	*p++;
-								highByte 	=	*p++;
-
-								data		=	(highByte << 8) | lowByte;
-								boot_page_fill(address,data);
-
-								address	=	address + 2;	// Select next word in memory
-								size	-=	2;				// Reduce number of bytes to write by two
-							} while (size);					// Loop until all bytes written
-
-							boot_page_write(tempaddress);
-							boot_spm_busy_wait();
-							boot_rww_enable();				// Re-enable the RWW section
+                            result=bootloader_program_page(address,p,size);	// Perform page erase and update
+                            if (!result) address+=size;
 						}
 						else
 						{
@@ -1240,62 +1253,62 @@ unsigned long	gEepromIndex;
 void	PrintDecInt(int theNumber, int digitCnt);
 
 #ifdef _AVR_CPU_NAME_
-	prog_char	gTextMsg_CPU_Name[]			PROGMEM	=	_AVR_CPU_NAME_;
+	const char 	gTextMsg_CPU_Name[]			PROGMEM	=	_AVR_CPU_NAME_;
 #else
-	prog_char	gTextMsg_CPU_Name[]			PROGMEM	=	"UNKNOWN";
+	const char	gTextMsg_CPU_Name[]			PROGMEM	=	"UNKNOWN";
 #endif
 
-	prog_char	gTextMsg_Explorer[]			PROGMEM	=	"Arduino explorer stk500V2 by MLS";
-	prog_char	gTextMsg_Prompt[]			PROGMEM	=	"Bootloader>";
-	prog_char	gTextMsg_HUH[]				PROGMEM	=	"Huh?";
-	prog_char	gTextMsg_COMPILED_ON[]		PROGMEM	=	"Compiled on = ";
-	prog_char	gTextMsg_CPU_Type[]			PROGMEM	=	"CPU Type    = ";
-	prog_char	gTextMsg_AVR_ARCH[]			PROGMEM	=	"__AVR_ARCH__= ";
-	prog_char	gTextMsg_AVR_LIBC[]			PROGMEM	=	"AVR LibC Ver= ";
-	prog_char	gTextMsg_GCC_VERSION[]		PROGMEM	=	"GCC Version = ";
-	prog_char	gTextMsg_CPU_SIGNATURE[]	PROGMEM	=	"CPU ID      = ";
-	prog_char	gTextMsg_FUSE_BYTE_LOW[]	PROGMEM	=	"Low fuse    = ";
-	prog_char	gTextMsg_FUSE_BYTE_HIGH[]	PROGMEM	=	"High fuse   = ";
-	prog_char	gTextMsg_FUSE_BYTE_EXT[]	PROGMEM	=	"Ext fuse    = ";
-	prog_char	gTextMsg_FUSE_BYTE_LOCK[]	PROGMEM	=	"Lock fuse   = ";
-	prog_char	gTextMsg_GCC_DATE_STR[]		PROGMEM	=	__DATE__;
-	prog_char	gTextMsg_AVR_LIBC_VER_STR[]	PROGMEM	=	__AVR_LIBC_VERSION_STRING__;
-	prog_char	gTextMsg_GCC_VERSION_STR[]	PROGMEM	=	__VERSION__;
-	prog_char	gTextMsg_VECTOR_HEADER[]	PROGMEM	=	"V#   ADDR   op code     instruction addr   Interrupt";
-	prog_char	gTextMsg_noVector[]			PROGMEM	=	"no vector";
-	prog_char	gTextMsg_rjmp[]				PROGMEM	=	"rjmp  ";
-	prog_char	gTextMsg_jmp[]				PROGMEM	=	"jmp ";
-	prog_char	gTextMsg_WHAT_PORT[]		PROGMEM	=	"What port:";
-	prog_char	gTextMsg_PortNotSupported[]	PROGMEM	=	"Port not supported";
-	prog_char	gTextMsg_MustBeLetter[]		PROGMEM	=	"Must be a letter";
-	prog_char	gTextMsg_SPACE[]			PROGMEM	=	" ";
-	prog_char	gTextMsg_WriteToEEprom[]	PROGMEM	=	"Writting EE";
-	prog_char	gTextMsg_ReadingEEprom[]	PROGMEM	=	"Reading EE";
-	prog_char	gTextMsg_EEPROMerrorCnt[]	PROGMEM	=	"EE err cnt=";
-	prog_char	gTextMsg_PORT[]				PROGMEM	=	"PORT";
+	const char	gTextMsg_Explorer[]			PROGMEM	=	"Arduino explorer stk500V2 by MLS";
+	const char	gTextMsg_Prompt[]			PROGMEM	=	"Bootloader>";
+	const char	gTextMsg_HUH[]				PROGMEM	=	"Huh?";
+	const char	gTextMsg_COMPILED_ON[]		PROGMEM	=	"Compiled on = ";
+	const char	gTextMsg_CPU_Type[]			PROGMEM	=	"CPU Type    = ";
+	const char	gTextMsg_AVR_ARCH[]			PROGMEM	=	"__AVR_ARCH__= ";
+	const char	gTextMsg_AVR_LIBC[]			PROGMEM	=	"AVR LibC Ver= ";
+	const char	gTextMsg_GCC_VERSION[]		PROGMEM	=	"GCC Version = ";
+	const char	gTextMsg_CPU_SIGNATURE[]	PROGMEM	=	"CPU ID      = ";
+	const char	gTextMsg_FUSE_BYTE_LOW[]	PROGMEM	=	"Low fuse    = ";
+	const char	gTextMsg_FUSE_BYTE_HIGH[]	PROGMEM	=	"High fuse   = ";
+	const char	gTextMsg_FUSE_BYTE_EXT[]	PROGMEM	=	"Ext fuse    = ";
+	const char	gTextMsg_FUSE_BYTE_LOCK[]	PROGMEM	=	"Lock fuse   = ";
+	const char	gTextMsg_GCC_DATE_STR[]		PROGMEM	=	__DATE__;
+	const char	gTextMsg_AVR_LIBC_VER_STR[]	PROGMEM	=	__AVR_LIBC_VERSION_STRING__;
+	const char	gTextMsg_GCC_VERSION_STR[]	PROGMEM	=	__VERSION__;
+	const char	gTextMsg_VECTOR_HEADER[]	PROGMEM	=	"V#   ADDR   op code     instruction addr   Interrupt";
+	const char	gTextMsg_noVector[]			PROGMEM	=	"no vector";
+	const char	gTextMsg_rjmp[]				PROGMEM	=	"rjmp  ";
+	const char	gTextMsg_jmp[]				PROGMEM	=	"jmp ";
+	const char	gTextMsg_WHAT_PORT[]		PROGMEM	=	"What port:";
+	const char	gTextMsg_PortNotSupported[]	PROGMEM	=	"Port not supported";
+	const char	gTextMsg_MustBeLetter[]		PROGMEM	=	"Must be a letter";
+	const char	gTextMsg_SPACE[]			PROGMEM	=	" ";
+	const char	gTextMsg_WriteToEEprom[]	PROGMEM	=	"Writting EE";
+	const char	gTextMsg_ReadingEEprom[]	PROGMEM	=	"Reading EE";
+	const char	gTextMsg_EEPROMerrorCnt[]	PROGMEM	=	"EE err cnt=";
+	const char	gTextMsg_PORT[]				PROGMEM	=	"PORT";
 
 
 //************************************************************************
 //*	Help messages
-	prog_char	gTextMsg_HELP_MSG_0[]		PROGMEM	=	"0=Zero addr";
-	prog_char	gTextMsg_HELP_MSG_QM[]		PROGMEM	=	"?=CPU stats";
-	prog_char	gTextMsg_HELP_MSG_AT[]		PROGMEM	=	"@=EEPROM test";
-	prog_char	gTextMsg_HELP_MSG_B[]		PROGMEM	=	"B=Blink LED";
-	prog_char	gTextMsg_HELP_MSG_E[]		PROGMEM	=	"E=Dump EEPROM";
-	prog_char	gTextMsg_HELP_MSG_F[]		PROGMEM	=	"F=Dump FLASH";
-	prog_char	gTextMsg_HELP_MSG_H[]		PROGMEM	=	"H=Help";
-	prog_char	gTextMsg_HELP_MSG_L[]		PROGMEM	=	"L=List I/O Ports";
-//	prog_char	gTextMsg_HELP_MSG_Q[]		PROGMEM	=	"Q=Quit & jump to user pgm";
-	prog_char	gTextMsg_HELP_MSG_Q[]		PROGMEM	=	"Q=Quit";
-	prog_char	gTextMsg_HELP_MSG_R[]		PROGMEM	=	"R=Dump RAM";
-	prog_char	gTextMsg_HELP_MSG_V[]		PROGMEM	=	"V=show interrupt Vectors";
-	prog_char	gTextMsg_HELP_MSG_Y[]		PROGMEM	=	"Y=Port blink";
+	const char	gTextMsg_HELP_MSG_0[]		PROGMEM	=	"0=Zero addr";
+	const char	gTextMsg_HELP_MSG_QM[]		PROGMEM	=	"?=CPU stats";
+	const char	gTextMsg_HELP_MSG_AT[]		PROGMEM	=	"@=EEPROM test";
+	const char	gTextMsg_HELP_MSG_B[]		PROGMEM	=	"B=Blink LED";
+	const char	gTextMsg_HELP_MSG_E[]		PROGMEM	=	"E=Dump EEPROM";
+	const char	gTextMsg_HELP_MSG_F[]		PROGMEM	=	"F=Dump FLASH";
+	const char	gTextMsg_HELP_MSG_H[]		PROGMEM	=	"H=Help";
+	const char	gTextMsg_HELP_MSG_L[]		PROGMEM	=	"L=List I/O Ports";
+//	const char	gTextMsg_HELP_MSG_Q[]		PROGMEM	=	"Q=Quit & jump to user pgm";
+	const char	gTextMsg_HELP_MSG_Q[]		PROGMEM	=	"Q=Quit";
+	const char	gTextMsg_HELP_MSG_R[]		PROGMEM	=	"R=Dump RAM";
+	const char	gTextMsg_HELP_MSG_V[]		PROGMEM	=	"V=show interrupt Vectors";
+	const char	gTextMsg_HELP_MSG_Y[]		PROGMEM	=	"Y=Port blink";
 
-	prog_char	gTextMsg_END[]				PROGMEM	=	"*";
+	const char	gTextMsg_END[]				PROGMEM	=	"*";
 
 
 //************************************************************************
-void	PrintFromPROGMEM(void *dataPtr, unsigned char offset)
+void	PrintFromPROGMEM(address_t dataPtr, unsigned char offset)
 {
 uint8_t	ii;
 char	theChar;
@@ -1327,7 +1340,7 @@ void	PrintNewLine(void)
 
 
 //************************************************************************
-void	PrintFromPROGMEMln(void *dataPtr, unsigned char offset)
+void	PrintFromPROGMEMln(address_t dataPtr, unsigned char offset)
 {
 	PrintFromPROGMEM(dataPtr, offset);
 
@@ -1405,27 +1418,27 @@ static void	PrintCPUstats(void)
 {
 unsigned char fuseByte;
 
-	PrintFromPROGMEMln(gTextMsg_Explorer, 0);
+	PrintFromPROGMEMln(FADDR(gTextMsg_Explorer), 0);
 
-	PrintFromPROGMEM(gTextMsg_COMPILED_ON, 0);
-	PrintFromPROGMEMln(gTextMsg_GCC_DATE_STR, 0);
+	PrintFromPROGMEM(FADDR(gTextMsg_COMPILED_ON), 0);
+	PrintFromPROGMEMln(FADDR(gTextMsg_GCC_DATE_STR), 0);
 
-	PrintFromPROGMEM(gTextMsg_CPU_Type, 0);
-	PrintFromPROGMEMln(gTextMsg_CPU_Name, 0);
+	PrintFromPROGMEM(FADDR(gTextMsg_CPU_Type), 0);
+	PrintFromPROGMEMln(FADDR(gTextMsg_CPU_Name), 0);
 
-	PrintFromPROGMEM(gTextMsg_AVR_ARCH, 0);
+	PrintFromPROGMEM(FADDR(gTextMsg_AVR_ARCH), 0);
 	PrintDecInt(__AVR_ARCH__, 1);
 	PrintNewLine();
 
-	PrintFromPROGMEM(gTextMsg_GCC_VERSION, 0);
-	PrintFromPROGMEMln(gTextMsg_GCC_VERSION_STR, 0);
+	PrintFromPROGMEM(FADDR(gTextMsg_GCC_VERSION), 0);
+	PrintFromPROGMEMln(FADDR(gTextMsg_GCC_VERSION_STR), 0);
 
 	//*	these can be found in avr/version.h
-	PrintFromPROGMEM(gTextMsg_AVR_LIBC, 0);
-	PrintFromPROGMEMln(gTextMsg_AVR_LIBC_VER_STR, 0);
+	PrintFromPROGMEM(FADDR(gTextMsg_AVR_LIBC), 0);
+	PrintFromPROGMEMln(FADDR(gTextMsg_AVR_LIBC_VER_STR), 0);
 
 #if defined(SIGNATURE_0)
-	PrintFromPROGMEM(gTextMsg_CPU_SIGNATURE, 0);
+	PrintFromPROGMEM(FADDR(gTextMsg_CPU_SIGNATURE), 0);
 	//*	these can be found in avr/iomxxx.h
 	PrintHexByte(SIGNATURE_0);
 	PrintHexByte(SIGNATURE_1);
@@ -1436,22 +1449,22 @@ unsigned char fuseByte;
 
 #if defined(GET_LOW_FUSE_BITS)
 	//*	fuse settings
-	PrintFromPROGMEM(gTextMsg_FUSE_BYTE_LOW, 0);
+	PrintFromPROGMEM(FADDR(gTextMsg_FUSE_BYTE_LOW), 0);
 	fuseByte	=	boot_lock_fuse_bits_get(GET_LOW_FUSE_BITS);
 	PrintHexByte(fuseByte);
 	PrintNewLine();
 
-	PrintFromPROGMEM(gTextMsg_FUSE_BYTE_HIGH, 0);
+	PrintFromPROGMEM(FADDR(gTextMsg_FUSE_BYTE_HIGH), 0);
 	fuseByte	=	boot_lock_fuse_bits_get(GET_HIGH_FUSE_BITS);
 	PrintHexByte(fuseByte);
 	PrintNewLine();
 
-	PrintFromPROGMEM(gTextMsg_FUSE_BYTE_EXT, 0);
+	PrintFromPROGMEM(FADDR(gTextMsg_FUSE_BYTE_EXT), 0);
 	fuseByte	=	boot_lock_fuse_bits_get(GET_EXTENDED_FUSE_BITS);
 	PrintHexByte(fuseByte);
 	PrintNewLine();
 
-	PrintFromPROGMEM(gTextMsg_FUSE_BYTE_LOCK, 0);
+	PrintFromPROGMEM(FADDR(gTextMsg_FUSE_BYTE_LOCK), 0);
 	fuseByte	=	boot_lock_fuse_bits_get(GET_LOCK_BITS);
 	PrintHexByte(fuseByte);
 	PrintNewLine();
@@ -1523,7 +1536,7 @@ unsigned char	*ramPtr;
 					break;
 
 				case kDUMP_EEPROM:
-					theValue	=	eeprom_read_byte((void *)myAddressPointer);
+					theValue	=	eeprom_read_byte((void *)(uint16_t)myAddressPointer);
 					break;
 
 				case kDUMP_RAM:
@@ -1563,11 +1576,11 @@ char	theChar;
 char	theEEPROMchar;
 int		errorCount;
 
-	PrintFromPROGMEMln(gTextMsg_WriteToEEprom, 0);
+	PrintFromPROGMEMln(FADDR(gTextMsg_WriteToEEprom), 0);
 	PrintNewLine();
 	ii			=	0;
 #if (FLASHEND > 0x10000)
-	while (((theChar = pgm_read_byte_far(gTextMsg_Explorer + ii)) != '*') && (ii < 512))
+	while (((theChar = pgm_read_byte_far(pgm_get_far_address(gTextMsg_Explorer) + ii)) != '*') && (ii < 512))
 #else
 	while (((theChar = pgm_read_byte_near(gTextMsg_Explorer + ii)) != '*') && (ii < 512))
 #endif
@@ -1575,7 +1588,7 @@ int		errorCount;
 		eeprom_write_byte((uint8_t *)ii, theChar);
 		if (theChar == 0)
 		{
-			PrintFromPROGMEM(gTextMsg_SPACE, 0);
+			PrintFromPROGMEM(FADDR(gTextMsg_SPACE), 0);
 		}
 		else
 		{
@@ -1587,12 +1600,12 @@ int		errorCount;
 	//*	no go back through and test
 	PrintNewLine();
 	PrintNewLine();
-	PrintFromPROGMEMln(gTextMsg_ReadingEEprom, 0);
+	PrintFromPROGMEMln(FADDR(gTextMsg_ReadingEEprom), 0);
 	PrintNewLine();
 	errorCount	=	0;
 	ii			=	0;
 #if (FLASHEND > 0x10000)
-	while (((theChar = pgm_read_byte_far(gTextMsg_Explorer + ii)) != '*') && (ii < 512))
+	while (((theChar = pgm_read_byte_far(pgm_get_far_address(gTextMsg_Explorer) + ii)) != '*') && (ii < 512))
 #else
 	while (((theChar = pgm_read_byte_near(gTextMsg_Explorer + ii)) != '*') && (ii < 512))
 #endif
@@ -1600,7 +1613,7 @@ int		errorCount;
 		theEEPROMchar	=	eeprom_read_byte((uint8_t *)ii);
 		if (theEEPROMchar == 0)
 		{
-			PrintFromPROGMEM(gTextMsg_SPACE, 0);
+			PrintFromPROGMEM(FADDR(gTextMsg_SPACE), 0);
 		}
 		else
 		{
@@ -1614,7 +1627,7 @@ int		errorCount;
 	}
 	PrintNewLine();
 	PrintNewLine();
-	PrintFromPROGMEM(gTextMsg_EEPROMerrorCnt, 0);
+	PrintFromPROGMEM(FADDR(gTextMsg_EEPROMerrorCnt), 0);
 	PrintDecInt(errorCount, 1);
 	PrintNewLine();
 	PrintNewLine();
@@ -1655,8 +1668,8 @@ unsigned long	absoluteAddr;
 
 	myMemoryPtr		=	0;
 	vectorIndex		=	0;
-	PrintFromPROGMEMln(gTextMsg_CPU_Name, 0);
-	PrintFromPROGMEMln(gTextMsg_VECTOR_HEADER, 0);
+	PrintFromPROGMEMln(FADDR(gTextMsg_CPU_Name), 0);
+	PrintFromPROGMEMln(FADDR(gTextMsg_VECTOR_HEADER), 0);
 	//					 V#   ADDR   op code
 	//					  1 - 0000 = C3 BB 00 00 rjmp 03BB >000776 RESET
 	while (vectorIndex < kInterruptVectorCount)
@@ -1701,7 +1714,7 @@ unsigned long	absoluteAddr;
 	
 		if (word1 == 0xffff)
 		{
-			PrintFromPROGMEM(gTextMsg_noVector, 0);
+			PrintFromPROGMEM(FADDR(gTextMsg_noVector), 0);
 		}
 		else if ((word1 & 0xc000) == 0xc000)
 		{
@@ -1710,7 +1723,7 @@ unsigned long	absoluteAddr;
 			absoluteAddr	=	wordMemoryAddress + realitiveAddr;	//*	add the offset to the current address
 			absoluteAddr	=	absoluteAddr << 1;					//*	multiply by 2 for byte address
 
-			PrintFromPROGMEM(gTextMsg_rjmp, 0);
+			PrintFromPROGMEM(FADDR(gTextMsg_rjmp), 0);
 			PrintHexByte((realitiveAddr >> 8) & 0x00ff);
 			PrintHexByte((realitiveAddr) & 0x00ff);
 			sendchar(0x20);
@@ -1730,7 +1743,7 @@ unsigned long	absoluteAddr;
 							
 			absoluteAddr	=	myFullAddress << 1;
 							
-			PrintFromPROGMEM(gTextMsg_jmp, 0);
+			PrintFromPROGMEM(FADDR(gTextMsg_jmp), 0);
 			PrintHexByte((myFullAddress >> 16) & 0x00ff);
 			PrintHexByte((myFullAddress >> 8) & 0x00ff);
 			PrintHexByte((myFullAddress) & 0x00ff);
@@ -1759,7 +1772,7 @@ unsigned long	absoluteAddr;
 //************************************************************************
 static void	PrintAvailablePort(char thePortLetter)
 {
-	PrintFromPROGMEM(gTextMsg_PORT, 0);
+	PrintFromPROGMEM(FADDR(gTextMsg_PORT), 0);
 	sendchar(thePortLetter);
 	PrintNewLine();
 }
@@ -1824,7 +1837,7 @@ static void	AVR_PortOutput(void)
 char	portLetter;
 char	getCharFlag;
 
-	PrintFromPROGMEM(gTextMsg_WHAT_PORT, 0);
+	PrintFromPROGMEM(FADDR(gTextMsg_WHAT_PORT), 0);
 
 	portLetter	=	recchar();
 	portLetter	=	portLetter & 0x5f;
@@ -1981,7 +1994,7 @@ char	getCharFlag;
 		#endif
 
 			default:
-				PrintFromPROGMEMln(gTextMsg_PortNotSupported, 0);
+				PrintFromPROGMEMln(FADDR(gTextMsg_PortNotSupported), 0);
 				getCharFlag	=	false;
 				break;
 		}
@@ -1992,7 +2005,7 @@ char	getCharFlag;
 	}
 	else
 	{
-		PrintFromPROGMEMln(gTextMsg_MustBeLetter, 0);
+		PrintFromPROGMEMln(FADDR(gTextMsg_MustBeLetter), 0);
 	}
 }
 
@@ -2000,19 +2013,19 @@ char	getCharFlag;
 //*******************************************************************
 static void PrintHelp(void)
 {
-	PrintFromPROGMEMln(gTextMsg_HELP_MSG_0, 0);
-	PrintFromPROGMEMln(gTextMsg_HELP_MSG_QM, 0);
-	PrintFromPROGMEMln(gTextMsg_HELP_MSG_AT, 0);
-	PrintFromPROGMEMln(gTextMsg_HELP_MSG_B, 0);
-	PrintFromPROGMEMln(gTextMsg_HELP_MSG_E, 0);
-	PrintFromPROGMEMln(gTextMsg_HELP_MSG_F, 0);
-	PrintFromPROGMEMln(gTextMsg_HELP_MSG_H, 0);
+	PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_0), 0);
+	PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_QM), 0);
+	PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_AT), 0);
+	PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_B), 0);
+	PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_E), 0);
+	PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_F), 0);
+	PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_H), 0);
 
-	PrintFromPROGMEMln(gTextMsg_HELP_MSG_L, 0);
-	PrintFromPROGMEMln(gTextMsg_HELP_MSG_Q, 0);
-	PrintFromPROGMEMln(gTextMsg_HELP_MSG_R, 0);
-	PrintFromPROGMEMln(gTextMsg_HELP_MSG_V, 0);
-	PrintFromPROGMEMln(gTextMsg_HELP_MSG_Y, 0);
+	PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_L), 0);
+	PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_Q), 0);
+	PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_R), 0);
+	PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_V), 0);
+	PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_Y), 0);
 }
 
 //************************************************************************
@@ -2035,12 +2048,12 @@ int				ii, jj;
 	gFlashIndex			=	0;
 	gEepromIndex		=	0;
 
-	PrintFromPROGMEMln(gTextMsg_Explorer, 0);
+	PrintFromPROGMEMln(FADDR(gTextMsg_Explorer), 0);
 
 	keepGoing	=	1;
 	while (keepGoing)
 	{
-		PrintFromPROGMEM(gTextMsg_Prompt, 0);
+		PrintFromPROGMEM(FADDR(gTextMsg_Prompt), 0);
 		theChar	=	recchar();
 		if (theChar >= 0x60)
 		{
@@ -2056,29 +2069,29 @@ int				ii, jj;
 		switch(theChar)
 		{
 			case '0':
-				PrintFromPROGMEMln(gTextMsg_HELP_MSG_0, 2);
+				PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_0), 2);
 				gFlashIndex		=	0;
 				gRamIndex		=	0;
 				gEepromIndex	=	0;
 				break;
 
 			case '?':
-				PrintFromPROGMEMln(gTextMsg_HELP_MSG_QM, 2);
+				PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_QM), 2);
 				PrintCPUstats();
 				break;
 
 			case '@':
-				PrintFromPROGMEMln(gTextMsg_HELP_MSG_AT, 2);
+				PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_AT), 2);
 				EEPROMtest();
 				break;
 
 			case 'B':
-				PrintFromPROGMEMln(gTextMsg_HELP_MSG_B, 2);
+				PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_B), 2);
 				BlinkLED();
 				break;
 
 			case 'E':
-				PrintFromPROGMEMln(gTextMsg_HELP_MSG_E, 2);
+				PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_E), 2);
 				DumpHex(kDUMP_EEPROM, gEepromIndex, 16);
 				gEepromIndex	+=	256;
 				if (gEepromIndex > E2END)
@@ -2088,44 +2101,44 @@ int				ii, jj;
 				break;
 		
 			case 'F':
-				PrintFromPROGMEMln(gTextMsg_HELP_MSG_F, 2);
+				PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_F), 2);
 				DumpHex(kDUMP_FLASH, gFlashIndex, 16);
 				gFlashIndex	+=	256;
 				break;
 
 			case 'H':
-				PrintFromPROGMEMln(gTextMsg_HELP_MSG_H, 2);
+				PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_H), 2);
 				PrintHelp();
 				break;
 
 			case 'L':
-				PrintFromPROGMEMln(gTextMsg_HELP_MSG_L, 2);
+				PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_L), 2);
 				ListAvailablePorts();
 				break;
 
 			case 'Q':
-				PrintFromPROGMEMln(gTextMsg_HELP_MSG_Q, 2);
+				PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_Q), 2);
 				keepGoing	=	false;
 				break;
 
 			case 'R':
-				PrintFromPROGMEMln(gTextMsg_HELP_MSG_R, 2);
+				PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_R), 2);
 				DumpHex(kDUMP_RAM, gRamIndex, 16);
 				gRamIndex	+=	256;
 				break;
 
 			case 'V':
-				PrintFromPROGMEMln(gTextMsg_HELP_MSG_V, 2);
+				PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_V), 2);
 				VectorDisplay();
 				break;
 
 			case 'Y':
-				PrintFromPROGMEMln(gTextMsg_HELP_MSG_Y, 2);
+				PrintFromPROGMEMln(FADDR(gTextMsg_HELP_MSG_Y), 2);
 				AVR_PortOutput();
 				break;
 			
 			default:
-				PrintFromPROGMEMln(gTextMsg_HUH, 0);
+				PrintFromPROGMEMln(FADDR(gTextMsg_HUH), 0);
 				break;
 		}
 	}
