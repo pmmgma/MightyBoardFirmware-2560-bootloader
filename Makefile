@@ -124,7 +124,7 @@ CINCS =
 CFLAGS = -g$(DEBUG)
 CFLAGS += $(CDEFS) $(CINCS)
 CFLAGS += -O$(OPT)
-CFLAGS += -funsigned-char -funsigned-bitfields -fpack-struct -fshort-enums -mno-tablejump
+CFLAGS += -funsigned-char -funsigned-bitfields -fpack-struct -fshort-enums -fno-jump-tables
 CFLAGS += -Wall -Wstrict-prototypes
 CFLAGS += -Wa,-adhlns=$(<:.c=.lst)
 CFLAGS += $(patsubst %,-I%,$(EXTRAINCDIRS))
@@ -209,10 +209,10 @@ LDFLAGS += -Wl,--section-start=.text=$(BOOTLOADER_ADDRESS)
 # Type: avrdude -c ?
 # to get a full listing.
 #
-AVRDUDE_PROGRAMMER = stk500v2
+AVRDUDE_PROGRAMMER = arduino_as_isp
 
 # com1 = serial port. Use lpt1 to connect to parallel port.
-AVRDUDE_PORT = com1    # programmer connected to serial device
+AVRDUDE_PORT = com4    # programmer connected to serial device
 
 AVRDUDE_WRITE_FLASH = -U flash:w:$(TARGET).hex
 #AVRDUDE_WRITE_EEPROM = -U eeprom:w:$(TARGET).eep
@@ -232,10 +232,14 @@ AVRDUDE_WRITE_FLASH = -U flash:w:$(TARGET).hex
 # to submit bug reports.
 #AVRDUDE_VERBOSE = -v -v
 
+# Uncomment the following line if you need to override the Baudrate
+#AVRDUDE_BAUDRATE = -b 19000
+
 AVRDUDE_FLAGS = -p $(MCU) -P $(AVRDUDE_PORT) -c $(AVRDUDE_PROGRAMMER)
 AVRDUDE_FLAGS += $(AVRDUDE_NO_VERIFY)
 AVRDUDE_FLAGS += $(AVRDUDE_VERBOSE)
 AVRDUDE_FLAGS += $(AVRDUDE_ERASE_COUNTER)
+AVRDUDE_FLAGS += $(AVRDUDE_BAUDRATE)
 
 
 
@@ -270,13 +274,16 @@ DEBUG_HOST = localhost
 
 #============================================================================
 
+# Define here the location of the AVR-GCC and AVRDUDE executables
+CC_PREFIX ?= /cygdrive/b/avr-gcc-14.1.0-x64-windows/bin/avr
+AVRDUDE_FOLDER ?= /cygdrive/b/avr-gcc-14.1.0-x64-windows/bin
 
 # Define programs and commands.
-CC = /Applications/Arduino.app/Contents/Resources/Java/hardware/tools/avr/bin/avr-gcc
-OBJCOPY = /Applications/Arduino.app/Contents/Resources/Java/hardware/tools/avr/bin/avr-objcopy
-OBJDUMP = /Applications/Arduino.app/Contents/Resources/Java/hardware/tools/avr/bin/avr-objdump
-SIZE = /Applications/Arduino.app/Contents/Resources/Java/hardware/tools/avr/bin/avr-size
-NM = /Applications/Arduino.app/Contents/Resources/Java/hardware/tools/avr/bin/avr-nm
+CC = $(CC_PREFIX)-gcc
+OBJCOPY = $(CC_PREFIX)-objcopy
+OBJDUMP = $(CC_PREFIX)-objdump
+SIZE = $(CC_PREFIX)-size
+NM = $(CC_PREFIX)-nm
 
 # SHELL = sh
 # CC = avr-gcc
@@ -284,7 +291,7 @@ NM = /Applications/Arduino.app/Contents/Resources/Java/hardware/tools/avr/bin/av
 # OBJDUMP = avr-objdump
 # SIZE = avr-size
 # NM = avr-nm
-AVRDUDE = avrdude
+AVRDUDE = $(AVRDUDE_FOLDER)/avrdude
 REMOVE = rm -f
 COPY = cp
 WINSHELL = cmd
@@ -439,7 +446,7 @@ end:
 
 # Display size of file.
 HEXSIZE = $(SIZE) --target=$(FORMAT) $(TARGET).hex
-ELFSIZE = $(SIZE) --format=avr --mcu=$(MCU) $(TARGET).elf
+ELFSIZE = $(SIZE) $(TARGET).elf
 
 sizebefore:
 	@if test -f $(TARGET).elf; then echo; echo $(MSG_SIZE_BEFORE); $(ELFSIZE); \
