@@ -537,42 +537,97 @@ void (*app_start)(void) = 0x0000;
 
 
 int __attribute__ ((noinline)) bootloader_program_page(address_t address, unsigned char *p, unsigned int	size) {
+    if (!size) return 0;
+    
+    address_t pageaddr=address & ~(SPM_PAGESIZE-1);
+
+    // erase only main section (bootloader protection)
+    if (pageaddr >= APP_END) return 0;
+    
+    #if SPM_PAGESIZE<=256
+    uint8_t limt;
+    uint8_t limm;
+    #else
+    uint16_t limt;
+    uint16_t limm;
+    #endif
+    
+    limm=address & (SPM_PAGESIZE-1);
+    limt=SPM_PAGESIZE-size-limm;
+
+    address=pageaddr;
+
     unsigned int	data;
     unsigned char	highByte, lowByte;
-    address_t		tempaddress	=	address;
-    // erase only main section (bootloader protection)
-    if (tempaddress < APP_END )
-    {
-        boot_page_erase(tempaddress);	// Perform page erase
-        boot_spm_busy_wait();		// Wait until the memory is erased.
-
-        /* Write FLASH */
-        do {
-            lowByte		=	*p++;
-            highByte 	=	*p++;
-
-            data		=	(highByte << 8) | lowByte;
-            boot_page_fill(address,data);
-
-            address	=	address + 2;	// Select next word in memory
-            size	-=	2;				// Reduce number of bytes to write by two
-        } while (size);					// Loop until all bytes written
-
-        boot_page_write(tempaddress);
-        boot_spm_busy_wait();
-        boot_rww_enable();				// Re-enable the RWW section
+    
+    
+#undef SPAGHETTI    
+#ifndef SPAGHETTI                    
+    /* Copy from flash to temporary fill page */
+    /* Copy complete words */
+    while (limm>1) {
+        data = pgm_read_word_far(address);
+        limm -= 2;
+        
+        boot_page_fill(address,data);
+        address += 2;
     }
     
+    /* If start address is odd, take one byte from flash + one byte from buffer */
+    if (limm) {
+        data = (*p++ << 8) | pgm_read_byte_far(address);
+        size--;
+        
+        boot_page_fill(address,data);
+        address += 2;        
+    }
+
+    /* Copy new data */
+    while (size>1) { // Loop until all bytes written
+    
+        lowByte		=	*p++;
+        highByte 	=	*p++;
+
+        data		=	(highByte << 8) | lowByte;
+        size	-=	2;				// Reduce number of bytes to write by two
+
+        boot_page_fill(address,data);        
+        address	=	address + 2;	// Select next word in memory
+    } 
+    
+    /* If there is still one more byte to copy, take one byte from buffer + one byte from flash */
+    if (size) {
+        data = (pgm_read_byte_far(address) << 8) | (*p++);
+        limt--;
+        
+        boot_page_fill(address,data);
+        address += 2;        
+    }
+    
+    /* Copy from flash to temporary fill page */
+    while (limt) {
+        data = pgm_read_word_far(address);
+        limt -= 2;
+        
+        boot_page_fill(address,data);
+        address += 2;
+    }    
+#else
+    
+
+#endif
+
+    boot_page_erase(pageaddr);	// Perform page erase
+    boot_spm_busy_wait();		// Wait until the memory is erased.
+    
+    boot_page_write(pageaddr);
+    boot_spm_busy_wait();
+    boot_rww_enable();				// Re-enable the RWW section
+
     return 0;    
 }
-
-void __attribute__((naked,section(".bootloader_trampoline"))) bootloader_trampoline(void);
-
-void bootloader_trampoline(void) {
-     __asm__ __volatile__ ("%~jmp " __STRINGIFY(bootloader_program_page) ::); 
-}
-
-
+    
+    
 
 
 
@@ -1061,7 +1116,7 @@ int main(void)
 							} while (size);					// Loop until all bytes written
 						#endif
 						}
-							msgLength	=	2;
+						msgLength	=	2;
 						msgBuffer[1]	=	STATUS_CMD_OK;
 					}
 					break;
@@ -2155,4 +2210,10 @@ int				ii, jj;
 }
 
 #endif
+
+void __attribute__((naked,section(".bootloader_trampoline"))) bootloader_trampoline(void);
+
+void bootloader_trampoline(void) {
+     __asm__ __volatile__ ("%~jmp " __STRINGIFY(bootloader_program_page) ::); 
+    } 
 
