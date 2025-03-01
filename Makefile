@@ -213,7 +213,7 @@ LDFLAGS += -Wl,--section-start=.bootloader_trampoline=$(BOOTLOADER_TRAMPOLINE)
 AVRDUDE_PROGRAMMER = arduino_as_isp
 
 # com1 = serial port. Use lpt1 to connect to parallel port.
-AVRDUDE_PORT = com4    # programmer connected to serial device
+AVRDUDE_PORT ?= com4    # programmer connected to serial device
 
 AVRDUDE_WRITE_FLASH = -U flash:w:$(TARGET).hex
 #AVRDUDE_WRITE_EEPROM = -U eeprom:w:$(TARGET).eep
@@ -234,7 +234,7 @@ AVRDUDE_WRITE_FLASH = -U flash:w:$(TARGET).hex
 #AVRDUDE_VERBOSE = -v -v
 
 # Uncomment the following line if you need to override the Baudrate
-#AVRDUDE_BAUDRATE = -b 19000
+#AVRDUDE_BAUDRATE = -b 19200
 
 AVRDUDE_FLAGS = -p $(MCU) -P $(AVRDUDE_PORT) -c $(AVRDUDE_PROGRAMMER)
 AVRDUDE_FLAGS += $(AVRDUDE_NO_VERIFY)
@@ -358,7 +358,7 @@ mega2560:	BOOTLOADER_ADDRESS = 3E000
 mega2560:	BOOTLOADER_TRAMPOLINE = 3FFF0
 mega2560:	CFLAGS += -D_MEGA_BOARD_
 mega2560:	begin gccversion sizebefore build sizeafter end 
-			mv $(TARGET).hex stk500boot_v2_mega2560.hex
+			#mv $(TARGET).hex $(TARGETFINAL).hex
 
 ############################################################
 #	Jul 6,	2010	<MLS> Adding 2560 support
