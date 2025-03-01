@@ -561,38 +561,49 @@ int __attribute__ ((noinline)) bootloader_program_page(address_t address, unsign
     unsigned char	highByte, lowByte;
     
     
-#undef SPAGHETTI    
-#ifndef SPAGHETTI                    
+    #define CALL_LABEL(label) asm goto ("%~call %x[func]" :: [func] "s" (&&label):"memory":label);
+
+    goto loopstart;
+    
+    
+writedata:
+    boot_page_fill(address,data);
+    address += 2;
+    __asm__ goto ("ret":::"memory":writedata);
+
+
+loopstart:
+    
+
     /* Copy from flash to temporary fill page */
-    /* Copy complete words */
     while (limm>1) {
         data = pgm_read_word_far(address);
         limm -= 2;
         
-        boot_page_fill(address,data);
-        address += 2;
+        
+        CALL_LABEL(writedata); //xpto1
     }
     
     /* If start address is odd, take one byte from flash + one byte from buffer */
     if (limm) {
-        data = (*p++ << 8) | pgm_read_byte_far(address);
+        data = (p[0] << 8) | pgm_read_byte_far(address);
+        p+=1;
         size--;
         
-        boot_page_fill(address,data);
-        address += 2;        
+        CALL_LABEL(writedata); //xpto2
     }
 
     /* Copy new data */
     while (size>1) { // Loop until all bytes written
     
-        lowByte		=	*p++;
-        highByte 	=	*p++;
+        lowByte		=	p[0];
+        highByte 	=	p[1];
+        p +=2;
 
         data		=	(highByte << 8) | lowByte;
         size	-=	2;				// Reduce number of bytes to write by two
 
-        boot_page_fill(address,data);        
-        address	=	address + 2;	// Select next word in memory
+        CALL_LABEL(writedata); //xpto3
     } 
     
     /* If there is still one more byte to copy, take one byte from buffer + one byte from flash */
@@ -600,30 +611,24 @@ int __attribute__ ((noinline)) bootloader_program_page(address_t address, unsign
         data = (pgm_read_byte_far(address) << 8) | (*p++);
         limt--;
         
-        boot_page_fill(address,data);
-        address += 2;        
+        CALL_LABEL(writedata); //xpto4
     }
     
     /* Copy from flash to temporary fill page */
     while (limt) {
         data = pgm_read_word_far(address);
-        limt -= 2;
+        limt = limt - 2;
         
-        boot_page_fill(address,data);
-        address += 2;
+        CALL_LABEL(writedata); //xpto5
     }    
-#else
     
-
-#endif
-
     boot_page_erase(pageaddr);	// Perform page erase
     boot_spm_busy_wait();		// Wait until the memory is erased.
     
     boot_page_write(pageaddr);
     boot_spm_busy_wait();
     boot_rww_enable();				// Re-enable the RWW section
-
+   
     return 0;    
 }
     
